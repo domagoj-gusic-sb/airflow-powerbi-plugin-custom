@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "airflow_powerbi_plugin_custom"
+version = "0.0.3a1"
+authors = [
+  { name="Ambika Garg", email="ambikagarg1101@gmail.com" },
+  { name="Domagoj Gusic", email="dgusic94@gmail.com" }
+]
+description = "Airflow PowerBI plugin"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Development Status :: 3 - Alpha",
+    "Environment :: Plugins",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules"
+]
+
+[project.urls]
+Homepage = "https://github.com/ambika-garg/PowerBI_Airflow_Plugin"
