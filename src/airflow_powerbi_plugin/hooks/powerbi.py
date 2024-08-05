@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Union
 
 import requests
-from azure.identity import ClientSecretCredential
+# from azure.identity import ClientSecretCredential
 
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
@@ -41,33 +41,34 @@ class PowerBIHook(BaseHook):
     :param powerbi_conn_id: Airflow Connection ID that contains the connection
         information for the Power BI account used for authentication.
     """
-
-    # conn_type: str = "powerbi"
-    # conn_name_attr: str = "powerbi_conn_id"
+    
+    conn_type: str = "powerbi"
+    conn_name_attr: str = "powerbi_conn_id"
     default_conn_name: str = "powerbi_default"
     hook_name: str = "Power BI"
 
-    # @classmethod
-    # def get_connection_form_widgets(cls) -> Dict[str, Any]:
-    #     """Return connection widgets to add to connection form."""
-    #     from flask_appbuilder.fieldwidgets import BS3TextFieldWidget
-    #     from flask_babel import lazy_gettext
-    #     from wtforms import StringField
+    @classmethod
+    def get_connection_form_widgets(cls) -> dict[str, Any]:
+        """Return connection widgets to add to connection form."""
+        from flask_appbuilder.fieldwidgets import BS3TextFieldWidget
+        from flask_babel import lazy_gettext
+        from wtforms import StringField
 
-    #     return {
-    #         "tenantId": StringField(lazy_gettext("Tenant ID"), widget=BS3TextFieldWidget()),
-    #     }
+        return {
+            "tenantId": StringField(lazy_gettext("Tenant ID"), widget=BS3TextFieldWidget()),
+            "clientId": StringField(lazy_gettext("Client ID"), widget=BS3TextFieldWidget()),
+        }
 
-    # @classmethod
-    # def get_ui_field_behaviour(cls) -> Dict[str, Any]:
-    #     """Return custom field behaviour."""
-    #     return {
-    #         "hidden_fields": ["schema", "port", "host", "extra"],
-    #         "relabeling": {
-    #             "login": "Client ID",
-    #             "password": "Secret",
-    #         },
-    #     }
+    @classmethod
+    def get_ui_field_behaviour(cls) -> dict[str, Any]:
+        """Return custom field behaviour."""
+        return {
+            "hidden_fields": ["schema", "port", "host", "extra"],
+            "relabeling": {
+                "login": "Client ID",
+                "password": "Refresh Token",
+            },
+        }
 
     def __init__(
         self,
@@ -77,6 +78,7 @@ class PowerBIHook(BaseHook):
         self.conn_id = powerbi_conn_id
         self._api_version = "v1.0"
         self._base_url = "https://api.powerbi.com"
+        self.cached_access_token: dict[str, str | None | int] = {"access_token": None, "expiry_time": 0}
         super().__init__()
 
     def refresh_dataset(self, dataset_id: str, group_id: str) -> str:
@@ -108,29 +110,55 @@ class PowerBIHook(BaseHook):
 
     def _get_token(self) -> str:
         """
-        Retrieve the access token used to authenticate against the API.
-        conn.login: Client ID
-        conn.password: Client Secret
+        If cached access token isn't expired, return it.
+
+        Generate OAuth access token using refresh token in connection details and cache it.
+        Update the connection with the new refresh token.
+
+        :return: The access token.
         """
-        conn = self.get_connection(self.conn_id)
-        extras = conn.extra_dejson
-        tenant = extras.get("tenantId", None)
+        access_token = self.cached_access_token.get("access_token")
+        expiry_time = self.cached_access_token.get("expiry_time")
 
-        if not conn.login or not conn.password:
-            raise ValueError("A Client ID and Secret is required to authenticate with Power BI.")
+        if access_token and expiry_time > time.time():
+            return str(access_token)
 
-        if not tenant:
-            raise ValueError("A Tenant ID is required when authenticating with Client ID and Secret.")
+        connection = self.get_connection(self.conn_id)
+        tenant_id = connection.extra_dejson.get("tenantId")
+        client_secret = connection.extra_dejson.get("client_secret")
+        client_id = connection.login
+        refresh_token = connection.password
+        scopes = FABRIC_SCOPES
 
-        credential = ClientSecretCredential(
-            client_id=conn.login, client_secret=conn.password, tenant_id=tenant
+        data = {
+            "grant_type": "refresh_token",
+            "client_id": client_id,
+            "refresh_token": refresh_token,
+            "scope": scopes,
+            "client_secret": client_secret
+        }
+
+        response = requests.get(
+            f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token",
+            data=data,
         )
 
-        resource = "https://analysis.windows.net/powerbi/api"
+        try:
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            msg = f"Response: {e.response.content.decode()} Status Code: {e.response.status_code}"
+            raise AirflowException(msg)
 
-        access_token = credential.get_token(f"{resource}/.default")
+        access_token = response.json().get("access_token")
+        refresh_token = response.json().get("refresh_token")
+        update_conn(self.conn_id, refresh_token)
 
-        return access_token.token
+        self.cached_access_token = {
+            "access_token": access_token,
+            "expiry_time": time.time() + response.json().get("expires_in"),
+        }
+
+        return access_token
 
     def get_refresh_history(
         self,
