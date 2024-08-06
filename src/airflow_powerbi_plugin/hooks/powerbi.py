@@ -11,6 +11,13 @@ from airflow.hooks.base import BaseHook
 from airflow.models import Connection
 from airflow.utils.db import provide_session
 
+@provide_session
+def update_conn(conn_id, refresh_token: str, session=None):
+    conn = session.query(Connection).filter(Connection.conn_id == conn_id).one()
+    conn.password = refresh_token
+    session.add(conn)
+    session.commit()
+
 
 class PowerBIDatasetRefreshFields(Enum):
     """Power BI refresh dataset details."""
