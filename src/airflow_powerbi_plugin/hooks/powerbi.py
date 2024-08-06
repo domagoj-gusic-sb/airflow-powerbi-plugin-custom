@@ -1,12 +1,15 @@
-import time
-from enum import Enum
-from typing import Any, Callable, Dict, List, Union
+from __future__ import annotations
 
+import logging
+import time
+from typing import Any, Callable, Dict, List, Union
+from enum import Enum
 import requests
-# from azure.identity import ClientSecretCredential
 
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
+from airflow.models import Connection
+from airflow.utils.db import provide_session
 
 
 class PowerBIDatasetRefreshFields(Enum):
