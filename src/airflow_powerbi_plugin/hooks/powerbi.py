@@ -128,7 +128,7 @@ class PowerBIHook(BaseHook):
         client_secret = connection.extra_dejson.get("client_secret")
         client_id = connection.login
         refresh_token = connection.password
-        scopes = FABRIC_SCOPES
+        scopes = "https://analysis.windows.net/powerbi/api/.default offline_access openid profile"
 
         data = {
             "grant_type": "refresh_token",
